@@ -170,6 +170,14 @@ fun MelodiaApp() {
     val navigation = rememberMelodiaNavigationState()
     val sidebar = rememberMelodiaSidebarState(SidebarWidth)
 
+    var sidebarAutoOpened by remember { mutableStateOf(false) }
+    LaunchedEffect(userProfile) {
+        if (!sidebarAutoOpened && userProfile != null) {
+            sidebarAutoOpened = true
+            sidebar.open()
+        }
+    }
+
     var showCreateSheet by remember { mutableStateOf(false) }
     // 听歌识曲全屏覆盖层，盖住底栏与迷你播放条
     var showRecognition by remember { mutableStateOf(false) }

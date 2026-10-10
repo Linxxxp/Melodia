@@ -1,0 +1,118 @@
+# Melodia 车机方控适配指南（MT MCP）
+
+> 基线：v1.11.0（targetSdk36 / Compose / 2 dex / 单 Activity，已实测核实）
+> 产出：**保留原包名 `com.lin0721.linmusic`**；225% 放大、沉浸全屏、singleTask
+
+## 0. 改动总览（共 3 处）
+
+| # | 改动 | 手段 |
+|---|---|---|
+| 1 | MainActivity 加 `launchMode="singleTask"` | axml |
+| 2 | MainActivity 注入 `attachBaseContext`：密度×2.25 | smali |
+| 3 | Theme.Melodia `windowFullscreen=true` + onResume `0x1706` | 资源+smali |
+
+> 包名**不改**，无任何包名/权限/authorities 改动。
+
+## 1. 工作流
+
+1. `mt_apk_open(原包)` → workspaceId；`mt_apk_edit_open` → editSessionId。
+2. 每个目标先 `read` 拿 `targetVersion` 再编辑；同类内改方法后类版本会变，重读。
+3. `mt_apk_edit_check(runBuildChecks=true)`。
+4. `mt_apk_build(sign=true, overwrite=true)`。
+5. 打开成品验证。
+
+## 2. 包名
+
+不改。manifest 的 `package`/`authorities`/权限、dex 字符串全部保持 `com.lin0721.linmusic`。
+⚠️ 与已装原版同包名：同签名可覆写安装，不同签名需先卸载；要与原版共存才需改名。
+
+## 3. singleTask
+
+MainActivity `<activity>` 标签追加：`android:launchMode="singleTask"`
+
+## 4. 显示大小 225%（放 MainActivity，勿放 Application）
+
+无 `attachBaseContext` 时用 `insert_before_match`，锚点取独有行 `.method public final m(Landroid/content/Intent;)V`，在其前插入：
+
+```smali
+.method protected attachBaseContext(Landroid/content/Context;)V
+    .registers 7
+    invoke-super {p0, p1}, Lzl0;->attachBaseContext(Landroid/content/Context;)V
+    :try_start_0
+    invoke-virtual {p1}, Landroid/content/Context;->getResources()Landroid/content/res/Resources;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/res/Resources;->getConfiguration()Landroid/content/res/Configuration;
+    move-result-object v1
+    new-instance v2, Landroid/content/res/Configuration;
+    invoke-direct {v2, v1}, Landroid/content/res/Configuration;-><init>(Landroid/content/res/Configuration;)V
+    iget v1, v2, Landroid/content/res/Configuration;->densityDpi:I
+    int-to-float v3, v1
+    const/high16 v4, 0x40100000
+    mul-float/2addr v3, v4
+    invoke-static {v3}, Ljava/lang/Math;->round(F)I
+    move-result v1
+    iput v1, v2, Landroid/content/res/Configuration;->densityDpi:I
+    invoke-virtual {v0}, Landroid/content/res/Resources;->getDisplayMetrics()Landroid/util/DisplayMetrics;
+    move-result-object v1
+    invoke-virtual {v0, v2, v1}, Landroid/content/res/Resources;->updateConfiguration(Landroid/content/res/Configuration;Landroid/util/DisplayMetrics;)V
+    :try_end_0
+    .catchall {:try_start_0 .. :try_end_0} :catchall_0
+    goto :goto_0
+    :catchall_0
+    move-exception v0
+    :goto_0
+    return-void
+.end method
+```
+
+倍率（`const/high16 v4,<值>`）：200%=`0x40000000`(2.0f)｜**225%=`0x40100000`(2.25f)★**｜300%=`0x40400000`(3.0f)｜150%=`0x3fc00000`(1.5f)
+原理：`densityDpi=原density×倍率`≈系统“显示大小×%”，数值越大 UI 越大。
+
+## 5. 沉浸全屏
+
+### a. Theme.Melodia（窗口级，布局稳定）
+
+`resource_table` 按名查 Theme.Melodia 最新 ID（例 `0x7f0f0113`，variant=default），valueXml：
+
+```xml
+<style name="Theme.Melodia" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:windowBackground">@color/window_background</item>
+    <item name="android:windowFullscreen">true</item>
+</style>
+```
+
+### b. MainActivity.onResume() 系统栏全隐藏
+
+在 `invoke-super {p0}, Landroid/app/Activity;->onResume()V` 后插入（`.registers 5`→`7`，用 v4/v5）：
+
+```smali
+    invoke-super {p0}, Landroid/app/Activity;->onResume()V
+    invoke-virtual {p0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+    move-result-object v4
+    invoke-virtual {v4}, Landroid/view/Window;->getDecorView()Landroid/view/View;
+    move-result-object v4
+    const/16 v5, 0x1706
+    invoke-virtual {v4, v5}, Landroid/view/View;->setSystemUiVisibility(I)V
+```
+
+`0x1706` = STABLE+LAYOUT_HIDE_NAVIG+LAYOUT_FULLSCREEN+HIDE_NAVIG+FULLSCREEN+IMMERSIVE_STICKY
+
+## 6. 坑
+
+1. ❌ 状态栏占位方案（去 windowFullscreen / onResume 用 0x1306）：弹窗顶出状态栏、UI 上下跳。就保持 `windowFullscreen + 0x1706`。
+2. ❌ 密度缩放勿放 `Application.attachBaseContext`（Compose/targetSdk36 不传递）；必须放 MainActivity。
+3. ✅ 保留原包名：无需改名/改类名；覆盖已装原版需同签名 key。
+4. ✅ 编辑前重读拿 targetVersion；`attachBaseContext` 的 invoke-super 用该类实际 `.super`（v1.11.0 为 `Lzl0`，版本升级需重查）。
+5. ✅ 单 Activity：沉浸/缩放都放 MainActivity；剪裁/投屏等次要 Activity 不处理。
+6. ✅ 先 edit_check 再 build。
+
+## 7. 交付
+
+输出：`完美方控_v{版本}.apk`（签名 V1/V2/V3，包名 `com.lin0721.linmusic`）。
+验收：manifest package=com.lin0721.linmusic；MainActivity 含 attachBaseContext（Math.round+0x40100000）与 onResume（setSystemUiVisibility）；Theme.Melodia 含 windowFullscreen；dex/签名正常。
+装机：同签名覆写安装 → 冷启动 → 225% 放大、全屏、singleTask。
+
+## 8. 可选增强
+
+- 个别 ROM 弹窗顶出系统栏：MainActivity 加 `onWindowFocusChanged(Z)`，获焦(p1!=0)重设 0x1706。
+- 顶部留白（刘海屏）：改 Compose 根布局顶部 padding=状态栏高度。
