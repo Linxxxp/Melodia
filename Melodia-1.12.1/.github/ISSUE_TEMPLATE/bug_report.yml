@@ -1,0 +1,58 @@
+name: Bug 反馈
+description: 报告 Melodia 中遇到的问题或异常行为
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么，以及你期望的正常表现
+      placeholder: 例如：开启随机播放后歌曲反复重置，期望正常随机切歌
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开某个歌单并播放
+        2. 点击随机播放按钮
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: 应用版本
+      description: 在「设置 - 关于」中查看
+      placeholder: 例如：1.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 设备型号与 Android 版本
+      placeholder: 例如：Xiaomi 14 Pro / Android 14
+    validations:
+      required: true
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 截图、录屏或日志
+      description: 可直接拖拽或粘贴文件上传，日志文件建议打包为 .zip / .txt
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前请确认
+      options:
+        - label: 已搜索过现有 Issue，确认没有重复反馈
+          required: true
